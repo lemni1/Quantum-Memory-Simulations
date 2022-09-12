@@ -1,0 +1,143 @@
+<simulation xmds-version="2">
+	<name>1DXPM4Lunpurefine_ML</name>
+	<author>Anthony</author>
+	<description> 4 level gradient echo memory with XPM simulation full set of equations - unpure initial state with 0.8 in ground state</description>
+<features>
+	<benchmark />
+	<bing />
+	<globals>
+		<![CDATA[
+		const double pi = M_PI;
+		double agamma = pi*5.75; 		/* excited state coherence decay (half the excited state linewidth, set to pi means all frequencies in terms of linewidth */
+		complex delta;  		/* one-photon detuning*/
+		double omega;		/*control field rabi frequency*/
+		double omegas;		/*Stark field rabi frequency*/
+		double deltas;		/*Stark field detuning*/
+		complex om;			/*operator for control field*/
+		complex oms;		/*operator for stark field*/
+		double eta;   		/*operator for gradient*/
+		double sdur;		/*Stark pulse duration*/
+
+		real gradientswitch(double time){
+  if (time < 35) { return 1.0; }
+  else {return -1.0; }}
+
+  		real controlswitch(double time){
+  if (time < 30) { return 1.0; }
+  else if (time < 40) {return 0.0;}
+  else {return 1.0; }}
+
+			real signalswitch(double time){
+	if (time < 34) { return 0.0; }
+	else if (time < sdur) {return 1.0;}
+	else {return 0.0; }}
+
+		double gaussian( double x, double w ) { return exp( -2 * pow(x,2) / pow(w,2) ); }
+		]]>
+	</globals>
+	<arguments append_args_to_output_filename="no">
+		<argument default_value= "16" name = "tin" type = "real" />
+		<argument default_value= "12" name = "pulsewidth" type = "real" />
+		<argument default_value= "0.3" name = "bandwidth" type = "real" />
+		<argument default_value= "2" name = "omega_in" type = "real" />
+		<argument default_value= "-220" name = "delta_in" type = "real" />
+		<argument default_value= "300" name = "od" type = "real" />
+		<argument default_value= "0.0000003" name = "amp" type = "real" />
+		<argument default_value= "2.3664" name = "omegas_in" type = "real" />
+		<argument default_value= "-8.7" name = "deltas_in" type = "real" />
+		<argument default_value= "5" name = "slength" type = "real" />
+		<argument default_value= "0.980" name = "purity" type = "real" />
+		<argument default_value= "1" name = "s_focus" type = "real" />	
+		<argument default_value= "1.4" name = "s_norm" type = "real" />	
+		<![CDATA[
+		omega = 2*pi*omega_in;
+		delta = 2*pi*delta_in;
+		omegas = 2*pi*omegas_in;
+		deltas = 2*pi*deltas_in;
+		sdur = 34 + slength;
+		]]>
+	</arguments>
+</features>
+<geometry>
+	<propagation_dimension>t</propagation_dimension>
+		<transverse_dimensions>
+		<dimension domain="(-0.5, 0.5)" lattice="100" name="z" />
+		</transverse_dimensions>
+</geometry>
+
+<vector initial_space="z" name="spinwave" type="complex">
+	<components>SS GS GG ES EG EE TS TG TE TT</components>
+	<initialisation>
+		<![CDATA[
+		GG = purity;
+		SS = 1 - purity;
+		EE = 0;
+		ES = 0;
+		GS = 0;
+		TS = 0;
+		TG = 0;
+		TE = 0;
+		TT = 0;
+		]]>
+	</initialisation>
+</vector>
+
+<vector initial_space="z" name="probe" type="complex">
+	<components>E</components>
+</vector>
+
+<sequence>
+	<integrate algorithm="ARK45" interval="80" steps="3200" tolerance="1.0e-7">
+	<samples>3200</samples>
+
+	<operators>
+		<operator kind="functions">
+		<![CDATA[
+		om = controlswitch(t)*omega;
+		eta = 2*pi*bandwidth * gradientswitch(t);		
+		]]>
+		</operator>
+
+		<operator algorithm="RK4" kind="cross_propagation" propagation_dimension="z">
+			<integration_vectors> probe </integration_vectors>
+			<dependencies>spinwave</dependencies>
+			<boundary_condition kind="left">
+				<![CDATA[
+				E= amp*gaussian(t-tin,pulsewidth);
+				oms = s_norm*omegas*signalswitch(t)/(pow(s_focus*z,2)+1); /*This focuses the Stark beam and normalizes its intensity*/
+				]]>
+			</boundary_condition>
+			<![CDATA[
+			dE_dz = i*sqrt(od)*conj(EG);
+			]]>
+		</operator>
+
+			<integration_vectors>spinwave</integration_vectors>
+				<![CDATA[
+				dSS_dt = i*(conj(ES)*conj(om) - om*ES + conj(TS)*conj(oms) - TS*oms) + agamma*(EE + sqrt(3)*conj(TE) + sqrt(3)*TE + 3*TT)/12;
+				dGS_dt = -i*(-conj(EG)*conj(om) - conj(TG)*conj(oms) + agamma*sqrt(od)*E*ES + eta*z*GS) - agamma*(sqrt(3)*EE + 3*conj(TE))/(6*sqrt(2));
+				dGG_dt = -i*agamma*sqrt(od)*(E*EG - conj(E)*conj(EG)) + agamma*EE/2;
+				dES_dt = i*(conj(om)*(EE - SS) - agamma*sqrt(od)*conj(E)*GS + conj(TE)*conj(oms) - delta*ES) - agamma*(7*ES + sqrt(3)*TS)/24;
+				dEG_dt = i*(-conj(GS)*conj(om) + agamma*sqrt(od)*conj(E)*(EE - GG) + (eta*z - delta)*EG) - agamma*(7*EG + sqrt(3)*TG)/24;
+				dEE_dt = i*(-conj(ES)*conj(om) + om*ES - agamma*sqrt(od)*conj(E)*conj(EG) + agamma*sqrt(od)*E*EG) - agamma*(14*EE + sqrt(3)*(conj(TE) + TE))/24;
+				dTS_dt = i*(TE*conj(om) + conj(oms)*(TT - SS) - deltas*TS) - agamma*(sqrt(3)*ES + 3*TS)/24;
+				dTG_dt = i*(agamma*sqrt(od)*conj(E)*TE - conj(GS)*conj(oms) + (eta*z - deltas)*TG) - agamma*(sqrt(3)*EG + 3*TG)/24;
+				dTE_dt = i*(om*TS - conj(ES)*conj(oms) + agamma*sqrt(od)*E*TG + (delta - deltas)*TE) - agamma*(sqrt(3)*EE + 10*TE + sqrt(3)*TT)/24;
+				dTT_dt = -i*(conj(TS)*conj(oms) - TS*oms) - agamma*(sqrt(3)*conj(TE) + sqrt(3)*TE + 6*TT)/24;
+			]]>
+	</operators>
+	</integrate>
+</sequence>
+
+<output filename="1DXPM4Lunpurefine_ML" format="hdf5">
+	<group>
+	<sampling basis="z" initial_sample="yes">
+		<moments> ER EI</moments>
+		<dependencies>probe spinwave</dependencies>
+		<![CDATA[
+		_SAMPLE_COMPLEX(E);
+		]]>
+	</sampling>
+	</group>
+</output>
+</simulation>

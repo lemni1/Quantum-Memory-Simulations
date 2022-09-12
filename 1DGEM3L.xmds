@@ -1,0 +1,105 @@
+<simulation xmds-version="2">
+	<name>1DGEM3L</name>
+	<author>Anthony</author>
+	<description> 3 level gradient echo memory simulation with no weak field approximation.  Simulates changes in population distr. Solves the 3-level Maxwell-Bloch equations for an ensemble under a classical control field and a weak probe</description>
+<features>
+	<benchmark />
+	<bing />
+	<globals>
+		<![CDATA[
+		const double pi = M_PI;
+		double agamma = pi*5.75; 		/* excited state coherence decay (half the excited state linewidth, set to pi means all frequencies in terms of linewidth */
+		complex delta;  		/* one-photon detuning*/
+		double omega;		/*control field rabi frequency*/
+		complex om;
+		double eta;   		/*operator for gradient*/
+
+		real gradientswitch(double time){
+  if (time < 40) { return 1.0; }
+  else {return -1.0; }}
+  
+  		real controlswitch(double time){
+  if (time < 35) { return 1.0; }
+  else if (time < 45) {return 0.0;}
+  else {return 1.0; }}
+
+		double gaussian( double x, double w ) { return exp( -2 * pow(x,2) / pow(w,2) ); }
+		]]>
+	</globals>
+	<arguments append_args_to_output_filename="no">
+		<argument default_value= "16" name = "tin" type = "real" />
+		<argument default_value= "12" name = "pulsewidth" type = "real" />
+		<argument default_value= "11" name = "bandwidth" type = "real" />
+		<argument default_value= "4" name = "omega_in" type = "real" />
+		<argument default_value= "-220" name = "delta_in" type = "real" />
+		<argument default_value= "300" name = "od" type = "real" />
+		<argument default_value= "1" name = "acstark_compensated" type = "real" />
+		<![CDATA[
+		omega = 2*pi*omega_in;
+		delta = 2*pi*delta_in;
+		]]>
+	</arguments>
+</features>
+<geometry>
+	<propagation_dimension>t</propagation_dimension>
+		<transverse_dimensions>
+		<dimension domain="(-0.5, 0.5)" lattice="100" name="z" />
+		</transverse_dimensions>
+</geometry>
+
+<vector initial_space="z" name="spinwave" type="complex">
+	<components>S P</components>
+</vector>
+
+<vector initial_space="z" name="probe" type="complex">
+	<components>E</components>
+</vector>
+
+<sequence>
+	<integrate algorithm="ARK45" interval="80" steps="200" tolerance="1.0e-6">
+	<samples>200</samples>
+	
+	<operators>   
+		<operator kind="functions">
+		<![CDATA[
+		om = controlswitch(t)*omega;
+		eta = 2*pi*bandwidth * gradientswitch(t); /* placing within the operators simplifies time dependence easier and omits it from the often long Maxwell-Bloch eqs*/
+		]]>
+		</operator>
+				     
+		<operator algorithm="RK4" kind="cross_propagation" propagation_dimension="z">
+			<integration_vectors> probe </integration_vectors>
+			<dependencies>spinwave</dependencies>
+			<boundary_condition kind="left">
+				<![CDATA[
+				E= gaussian(t-tin,pulsewidth);
+				]]>
+			</boundary_condition>
+			<![CDATA[
+			dE_dz = i * sqrt(od) * P;
+			]]>
+		</operator>
+
+			<integration_vectors>spinwave</integration_vectors>
+				<![CDATA[
+				dP_dt = (-agamma + i * delta) * P + i * conj(om) * S + i*agamma*sqrt(od)*E;
+				dS_dt = i * eta * z * S + i * om * P + i*acstark_compensated*(om*conj(om)*(delta+agamma)/(agamma*agamma + delta*delta))*S;
+			]]>
+	</operators>
+	</integrate>
+</sequence>
+
+<output filename="1DGEM3L" format="hdf5">
+	<group>
+	<sampling basis="z" initial_sample="yes">
+		<moments>SR SI PR PI ER EI</moments>
+		<dependencies>probe spinwave</dependencies>
+		<![CDATA[
+		_SAMPLE_COMPLEX(S);
+		_SAMPLE_COMPLEX(E);
+		_SAMPLE_COMPLEX(P);		
+		]]>
+	</sampling>
+	</group>
+</output>
+</simulation>

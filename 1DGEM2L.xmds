@@ -1,0 +1,93 @@
+<simulation xmds-version="2">
+	<name>1DGEM2L</name>
+	<author>Anthony</author>
+	<description> 2 level gradient echo memory simulation. Solves the 2 level Maxwell-Bloch equations for an ensemble under a classical control field and a weak probe</description>
+<features>
+	<benchmark />
+	<bing />
+	<globals>
+		<![CDATA[
+		const double pi = M_PI;
+		double agamma = pi*5.75; 		/* excited state coherence decay (half the excited state linewidth, all frequencies in MHz*/
+		const double od = 300;     		/*optical depth*/ 
+		const double delta = 2*pi*250;  		/* one-photon detuning*/
+		double omega;		/*control field rabi frequency*/
+		double eta;   		/*operator for gradient*/
+
+		real gradientswitch(double time){
+  if (time < 40) { return 1.0; }
+  else {return -1.0; }}
+
+		double gaussian( double x, double w ) { return exp( -2 * pow(x,2) / pow(w,2) ); }
+		]]>
+	</globals>
+	<arguments append_args_to_output_filename="no">
+		<argument default_value= "2.5" name = "tin" type = "real" />
+		<argument default_value= "2" name = "pulsewidth" type = "real" />
+		<argument default_value= "0.1" name = "bandwidth" type = "real" />
+		<argument default_value= "5" name = "omega_in" type = "real" />
+		<![CDATA[
+		omega = 2*pi*omega_in;
+		]]>
+	</arguments>
+</features>
+<geometry>
+	<propagation_dimension>t</propagation_dimension>
+		<transverse_dimensions>
+		<dimension domain="(-0.5, 0.5)" lattice="100" name="z" />
+		</transverse_dimensions>
+</geometry>
+
+<vector initial_space="z" name="spinwave" type="complex">
+	<components>S</components>
+</vector>
+
+<vector initial_space="z" name="probe" type="complex">
+	<components>E</components>
+</vector>
+
+<sequence>
+	<integrate algorithm="ARK45" interval="80" steps="200" tolerance="1.0e-6">
+	<samples>200</samples>
+	
+	<operators>   
+		<operator kind="functions">
+		<![CDATA[
+		eta = 2*pi*bandwidth * gradientswitch(t); /* placing within the operators simplifies time dependence easier and omits it from the often long Maxwell-Bloch eqs*/
+		]]>
+		</operator>
+				     
+		<operator algorithm="RK4" kind="cross_propagation" propagation_dimension="z">
+			<integration_vectors> probe </integration_vectors>
+			<dependencies>spinwave</dependencies>
+			<boundary_condition kind="left">
+				<![CDATA[
+				E= gaussian(t-tin,pulsewidth);
+				]]>
+			</boundary_condition>
+			<![CDATA[
+			dE_dz = i * sqrt(od) * omega * S / delta;
+			]]>
+		</operator>
+
+			<integration_vectors>spinwave</integration_vectors>
+				<![CDATA[
+				dS_dt = i * (eta * z * S + sqrt(od) * agamma * omega * E / delta);
+			]]>
+	</operators>
+	</integrate>
+</sequence>
+
+<output filename="1DGEM2L" format="hdf5">
+	<group>
+	<sampling basis="z" initial_sample="yes">
+		<moments>SR SI ER EI</moments>
+		<dependencies>probe spinwave</dependencies>
+		<![CDATA[
+		_SAMPLE_COMPLEX(S);
+		_SAMPLE_COMPLEX(E);
+		]]>
+	</sampling>
+	</group>
+</output>
+</simulation>
